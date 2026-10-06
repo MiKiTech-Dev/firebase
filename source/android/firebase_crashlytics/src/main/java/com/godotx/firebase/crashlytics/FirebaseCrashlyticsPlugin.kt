@@ -7,6 +7,9 @@ import org.godotengine.godot.plugin.GodotPlugin
 import org.godotengine.godot.plugin.SignalInfo
 import org.godotengine.godot.plugin.UsedByGodot
 
+/** Lỗi script của game (GDScript) ghi như ngoại lệ non-fatal; stack dựng từ backtrace của Godot. */
+class GodotScriptError(message: String) : Exception(message)
+
 class FirebaseCrashlyticsPlugin(godot: Godot) : GodotPlugin(godot) {
 
     private var crashlytics: FirebaseCrashlytics? = null
@@ -166,5 +169,38 @@ class FirebaseCrashlyticsPlugin(godot: Godot) : GodotPlugin(godot) {
     fun set_crashlytics_collection_enabled(enabled: Boolean) {
         FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(enabled)
     }
-}
 
+    /**
+     * Ghi một lỗi non-fatal để Crashlytics nhóm theo stack. [stack] là các dòng `đường_dẫn|số_dòng|hàm`
+     * (đường dẫn dạng res://src/a/b.gd), tối đa 30 dòng; thiếu thì Crashlytics nhóm theo thông điệp.
+     */
+    @UsedByGodot
+    fun record_error(kind: String, message: String, stack: String) {
+        val crashlyticsInstance = crashlytics
+        if (crashlyticsInstance == null) {
+            emitSignal("crashlytics_error", "crashlytics_not_initialized")
+            return
+        }
+        try {
+            val error = GodotScriptError("$kind: $message")
+            val frames = stack.lineSequence().filter { it.isNotBlank() }.take(30).map { line ->
+                val parts = line.split('|')
+                val path = parts.getOrElse(0) { "unknown" }.removePrefix("res://")
+                val declaring = path.removeSuffix(".gd").replace('/', '.')
+                StackTraceElement(
+                    declaring,
+                    parts.getOrElse(2) { "?" },
+                    path.substringAfterLast('/'),
+                    parts.getOrNull(1)?.toIntOrNull() ?: -1
+                )
+            }.toList()
+            if (frames.isNotEmpty()) {
+                error.stackTrace = frames.toTypedArray()
+            }
+            crashlyticsInstance.recordException(error)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to record error", e)
+            emitSignal("crashlytics_error", e.message ?: "record_error_failed")
+        }
+    }
+}

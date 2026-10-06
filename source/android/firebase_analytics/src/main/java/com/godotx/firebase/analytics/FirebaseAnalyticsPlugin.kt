@@ -140,5 +140,14 @@ class FirebaseAnalyticsPlugin(godot: Godot) : GodotPlugin(godot) {
         }
         FirebaseAnalytics.getInstance(ctx).setAnalyticsCollectionEnabled(enabled)
     }
-}
 
+    /** Đặt một thuộc tính người dùng (ví dụ `device_tier`) để lọc báo cáo; không dùng cho dữ liệu cá nhân. */
+    @UsedByGodot
+    fun set_user_property(name: String, value: String) {
+        val ctx = activity ?: run {
+            emitSignal("analytics_error", "activity_null")
+            return
+        }
+        FirebaseAnalytics.getInstance(ctx).setUserProperty(name, value)
+    }
+}
